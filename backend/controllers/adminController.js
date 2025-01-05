@@ -8,98 +8,74 @@ dotenv.config();
 
 
 // Login function
-export const loginAdmin = async (req, res) => {
-    const { username, password } = req.body;
-
+export const login = async (req, res) => {
+    const { email, password } = req.body;
+  
     try {
-        const admin = await Admin.findOne({ username });
-        if (!admin || !(await admin.matchPassword(password))) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, {
-            expiresIn: '1h',
-        });
-
-        res.status(200).json({
-            token,
-            adminId: admin._id,
-            username: admin.username,
-        });
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+  
+      // Fetch admin by email
+      const admin = await Admin.findOne({ email });
+      if (!admin) {
+        return res.status(400).json({ message: 'Invalid email or password' });
+      }
+  
+      // Compare password with hashed password in the database
+      const isMatch = await admin.comparePassword(password);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Invalid email or password' });
+      }
+  
+      // Generate JWT token
+      const token = jwt.sign({ id: admin._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  
+      res.json({
+        message: 'Admin login successful',
+        token,
+        admin: {
+          id: admin._id,
+          email: admin.email,
+        },
+      });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ message: 'Server error' });
+      console.error('Error during login:', error);
+      res.status(500).json({ message: 'Server error' });
     }
-};
+  };
+  
 
-// Function to generate random username and password
-const generateUsername = () => {
-    const prefix = 'admin_';
-    const randomString = Math.random().toString(36).substring(2, 8); // Generate a random string
-    return `${prefix}${randomString}`;
-};
+  export const logout = (req, res) => {
+    res.json({ message: 'Logout successful' });
+  };
+  
 
-const generatePassword = (length = 12) => {
-    const upperCaseLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const lowerCaseLetters = 'abcdefghijklmnopqrstuvwxyz';
-    const digits = '0123456789';
-    const specialCharacters = '@#$%&*!';
-
-    const allCharacters = upperCaseLetters + lowerCaseLetters + digits + specialCharacters;
-
-    let password = '';
-    password += upperCaseLetters[Math.floor(Math.random() * upperCaseLetters.length)];
-    password += lowerCaseLetters[Math.floor(Math.random() * lowerCaseLetters.length)];
-    password += digits[Math.floor(Math.random() * digits.length)];
-    password += specialCharacters[Math.floor(Math.random() * specialCharacters.length)];
-
-    for (let i = 4; i < length; i++) {
-        password += allCharacters[Math.floor(Math.random() * allCharacters.length)];
+  
+  export const setupAdmin = async (req, res) => {
+    const { username, email, password } = req.body;
+  
+    if (!username || !email || !password) {
+      return res.status(400).json({ message: 'All fields (username, email, password) are required.' });
     }
-
-    // Shuffle the password to make it more random
-    password = password.split('').sort(() => Math.random() - 0.5).join('');
-
-    return password;
-};
-
-// Create new admin function
-export const createAdmin = async (req, res) => {
-    const username = generateUsername();
-    const password = generatePassword();
-
+  
     try {
-        const admin = new Admin({ username, password });
-        await admin.save();
-        res.status(201).json({
-            message: 'Admin user created successfully',
-            username,
-            password, // You may not want to return the password in production!
-        });
+      // Check if admin already exists
+      const adminExists = await Admin.findOne({ email });
+      if (adminExists) {
+        return res.status(400).json({ message: 'Admin already exists.' });
+      }
+  
+      // Create new admin
+      const newAdmin = new Admin({ username, email, password });
+      await newAdmin.save();
+  
+      res.json({ message: 'Admin created successfully.' });
     } catch (error) {
-        console.error('Error creating admin user:', error);
-        res.status(500).json({ message: 'Error creating admin user' });
+      console.error('Error during admin setup:', error);
+      res.status(500).json({ message: 'Server error' });
     }
-};
-
-
-// Logout function (using a token blacklist in memory for simplicity)
-let tokenBlacklist = new Set();
-
-export const logoutAdmin = (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-        return res.status(400).json({ message: "Authorization header missing" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    if (!token) {
-        return res.status(400).json({ message: "Token missing in Authorization header" });
-    }
-
-    tokenBlacklist.add(token);
-    res.status(200).json({ message: "Logged out successfully" });
-};
+  };
 
 
 // Middleware to check token blacklist (for routes that require authentication)
